@@ -336,20 +336,13 @@ def allclose(
     return paddle.allclose(x1, x2, rtol=rtol, atol=atol, equal_nan=equal_nan)
 
 
-@with_unsupported_device_and_dtypes(
-    {"2.4.2 and below": {"cpu": ("uint16", "bfloat16")}}, backend_version
-)
 def fix(
     x: paddle.Tensor,
     /,
     *,
     out: Optional[paddle.Tensor] = None,
 ) -> paddle.Tensor:
-    x = paddle.floor(x)
-    if out is not None:
-        ivy.assign(x.numpy(), out)
-        return out
-    return x.numpy()
+    raise IvyNotImplementedException()
 
 
 def nextafter(
