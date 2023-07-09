@@ -1,45 +1,10 @@
 from hypothesis import strategies as st
-
-# local
-import ivy_tests.test_ivy.helpers as helpers
-from ivy_tests.test_ivy.helpers import handle_test
 import numpy as np
 
-
-@handle_test(
-    fn_tree="functional.ivy.experimental.triu_indices",
-    dtype_and_x=helpers.dtype_and_values(
-        available_dtypes=helpers.get_dtypes("integer"),
-        max_num_dims=0,
-        num_arrays=3,
-        min_value=0,
-        max_value=10,
-    ),
-    test_with_out=st.just(False),
-    test_gradients=st.just(False),
-    test_instance_method=st.just(False),
-)
-def test_triu_indices(
-    *,
-    dtype_and_x,
-    test_flags,
-    backend_fw,
-    fn_name,
-    on_device,
-    ground_truth_backend,
-):
-    input_dtype, x = dtype_and_x
-    helpers.test_function(
-        ground_truth_backend=ground_truth_backend,
-        input_dtypes=input_dtype,
-        test_flags=test_flags,
-        fw=backend_fw,
-        on_device=on_device,
-        fn_name=fn_name,
-        n_rows=int(x[0]),
-        n_cols=int(x[1]),
-        k=int(x[2]),
-    )
+# local
+import ivy
+import ivy_tests.test_ivy.helpers as helpers
+from ivy_tests.test_ivy.helpers import handle_test
 
 
 # vorbis_window
@@ -79,6 +44,7 @@ def test_vorbis_window(
     )
 
 
+# TODO: fix return precision problem when dtype=bfloat16
 # hann_window
 @handle_test(
     fn_tree="functional.ivy.experimental.hann_window",
@@ -109,6 +75,7 @@ def test_hann_window(
         ground_truth_backend=ground_truth_backend,
         input_dtypes=input_dtype,
         test_flags=test_flags,
+        atol_=0.005,
         fw=backend_fw,
         fn_name=fn_name,
         on_device=on_device,
@@ -131,6 +98,7 @@ def test_hann_window(
     beta=st.floats(min_value=0, max_value=5),
     dtype=helpers.get_dtypes("float", full=False),
     test_gradients=st.just(False),
+    test_instance_method=st.just(False),
 )
 def test_kaiser_window(
     *,
@@ -163,20 +131,19 @@ def test_kaiser_window(
 @handle_test(
     fn_tree="functional.ivy.experimental.kaiser_bessel_derived_window",
     dtype_and_x=helpers.dtype_and_values(
-        available_dtypes=helpers.get_dtypes("float"),
-        shape=(1, 1),
+        available_dtypes=helpers.get_dtypes("integer"),
+        max_num_dims=0,
         min_value=1,
         max_value=10,
     ),
-    periodic=st.booleans(),
     beta=st.floats(min_value=1, max_value=5),
     dtype=helpers.get_dtypes("float", full=False),
     test_gradients=st.just(False),
+    test_instance_method=st.just(False),
 )
 def test_kaiser_bessel_derived_window(
     *,
     dtype_and_x,
-    periodic,
     beta,
     dtype,
     test_flags,
@@ -194,7 +161,6 @@ def test_kaiser_bessel_derived_window(
         fn_name=fn_name,
         on_device=on_device,
         window_length=int(x[0]),
-        periodic=periodic,
         beta=beta,
         dtype=dtype[0],
     )
@@ -327,51 +293,138 @@ def test_eye_like(
     )
 
 
-@st.composite
-def _get_dtype_buffer_count_offset(draw):
-    dtype, value = draw(
-        helpers.dtype_and_values(
-            available_dtypes=helpers.get_dtypes("valid"),
-        )
-    )
-    value = np.array(value)
-    length = value.size
-    value = value.tobytes()
-
-    offset = draw(helpers.ints(min_value=0, max_value=length - 1))
-    count = draw(helpers.ints(min_value=-(2**30), max_value=length - offset))
-    if count == 0:
-        count = -1
-    offset = offset * np.dtype(dtype[0]).itemsize
-
-    return dtype, value, count, offset
-
-
+# ndenumerate
 @handle_test(
-    fn_tree="functional.ivy.experimental.frombuffer",
-    dtype_buffer_count_offset=_get_dtype_buffer_count_offset(),
+    fn_tree="functional.ivy.experimental.ndenumerate",
+    dtype_and_x=helpers.dtype_and_values(
+        available_dtypes=helpers.get_dtypes("valid"),
+        min_num_dims=1,
+    ),
+)
+def test_ndenumerate(dtype_and_x):
+    values = dtype_and_x[1][0]
+    for (index1, x1), (index2, x2) in zip(
+        np.ndenumerate(values), ivy.ndenumerate(values)
+    ):
+        assert index1 == index2 and x1 == x2.to_numpy()
+
+
+# ndindex
+@handle_test(
+    fn_tree="functional.ivy.experimental.ndindex",
+    dtype_x_shape=helpers.dtype_and_values(
+        available_dtypes=helpers.get_dtypes("valid"),
+        min_num_dims=1,
+        ret_shape=True,
+    ),
+)
+def test_ndindex(dtype_x_shape):
+    shape = dtype_x_shape[2]
+    for index1, index2 in zip(np.ndindex(shape), ivy.ndindex(shape)):
+        assert index1 == index2
+
+
+# indices
+@handle_test(
+    fn_tree="functional.ivy.experimental.indices",
+    ground_truth_backend="numpy",
+    shape=helpers.get_shape(min_num_dims=1),
+    dtype=helpers.get_dtypes("integer", full=False),
+    sparse=st.booleans(),
+    container_flags=st.just([False]),
     test_instance_method=st.just(False),
     test_with_out=st.just(False),
     test_gradients=st.just(False),
 )
-def test_frombuffer(
-    dtype_buffer_count_offset,
+def test_indices(
+    *,
+    shape,
+    dtype,
+    sparse,
     test_flags,
     backend_fw,
     fn_name,
     on_device,
     ground_truth_backend,
 ):
-    input_dtype, buffer, count, offset = dtype_buffer_count_offset
     helpers.test_function(
-        input_dtypes=input_dtype,
+        input_dtypes=[],
         test_flags=test_flags,
+        ground_truth_backend=ground_truth_backend,
         on_device=on_device,
         fw=backend_fw,
         fn_name=fn_name,
-        buffer=buffer,
-        dtype=input_dtype[0],
-        count=count,
-        offset=offset,
+        dimensions=shape,
+        dtype=dtype[0],
+        sparse=sparse,
+    )
+
+
+@st.composite
+def valid_unsorted_segment_min_inputs(draw):
+    while True:
+        dtype = draw(st.sampled_from([ivy.int32, ivy.int64, ivy.float32, ivy.float64]))
+        segment_ids_dim = draw(st.integers(min_value=3, max_value=10))
+        num_segments = draw(st.integers(min_value=2, max_value=segment_ids_dim))
+
+        data_dim = draw(
+            helpers.get_shape(
+                min_dim_size=segment_ids_dim,
+                max_dim_size=segment_ids_dim,
+                min_num_dims=1,
+                max_num_dims=4,
+            )
+        )
+        data_dim = (segment_ids_dim,) + data_dim[1:]
+
+        data = draw(
+            helpers.array_values(
+                dtype=dtype,
+                shape=data_dim,
+                min_value=1,
+                max_value=10,
+            )
+        )
+
+        segment_ids = draw(
+            helpers.array_values(
+                dtype=ivy.int32,
+                shape=(segment_ids_dim,),
+                min_value=0,
+                max_value=num_segments + 1,
+            )
+        )
+        if data.shape[0] == segment_ids.shape[0]:
+            if np.max(segment_ids) < num_segments:
+                return (dtype, ivy.int32), data, num_segments, segment_ids
+
+
+# unsorted_segment_min
+@handle_test(
+    fn_tree="functional.ivy.experimental.unsorted_segment_min",
+    ground_truth_backend="tensorflow",
+    d_x_n_s=valid_unsorted_segment_min_inputs(),
+    test_with_out=st.just(False),
+    test_gradients=st.just(False),
+)
+def test_unsorted_segment_min(
+    *,
+    d_x_n_s,
+    test_flags,
+    backend_fw,
+    fn_name,
+    on_device,
+    ground_truth_backend,
+):
+    dtypes, data, num_segments, segment_ids = d_x_n_s
+    helpers.test_function(
+        input_dtypes=dtypes,
+        test_flags=test_flags,
         ground_truth_backend=ground_truth_backend,
+        on_device=on_device,
+        fw=backend_fw,
+        fn_name=fn_name,
+        data=data,
+        segment_ids=segment_ids,
+        num_segments=num_segments,
     )

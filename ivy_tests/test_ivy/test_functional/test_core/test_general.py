@@ -175,65 +175,30 @@ def test_array_equal(
     )
 
 
-@st.composite
-def array_and_boolean_mask(
-    draw,
-    *,
-    array_dtypes,
-    allow_inf=False,
-    min_num_dims=1,
-    max_num_dims=5,
-    min_dim_size=1,
-    max_dim_size=10,
-):
-    x_dtype, x = draw(
-        helpers.dtype_and_values(
-            available_dtypes=array_dtypes,
-            allow_inf=allow_inf,
-            min_num_dims=min_num_dims,
-            max_num_dims=max_num_dims,
-            min_dim_size=min_dim_size,
-            max_dim_size=max_dim_size,
-        )
-    )
-    boolean_mask_dtype, boolean_mask = draw(
-        helpers.dtype_and_values(
-            dtype=["bool"],
-            min_num_dims=min_num_dims,
-            max_num_dims=max_num_dims,
-            min_dim_size=min_dim_size,
-            max_dim_size=max_dim_size,
-        )
-    )
-    return [x_dtype[0], boolean_mask_dtype[0]], x[0], boolean_mask[0]
-
-
 # get_item
 # TODO: add container and array instance methods
 @handle_test(
     fn_tree="functional.ivy.get_item",
-    dtype_x_indices=st.one_of(
-        helpers.array_indices_axis(
-            array_dtypes=helpers.get_dtypes("valid"),
-            indices_dtypes=helpers.get_dtypes("integer"),
-            disable_random_axis=True,
-            first_dimension_only=True,
-        ),
-        array_and_boolean_mask(array_dtypes=helpers.get_dtypes("valid")),
+    ground_truth_backend="numpy",
+    dtypes_x_query=helpers.dtype_array_query(
+        available_dtypes=helpers.get_dtypes("valid"),
     ),
+    copy=st.booleans(),
     test_with_out=st.just(False),
     test_gradients=st.just(False),
     test_instance_method=st.just(False),
+    container_flags=st.just([False]),
 )
 def test_get_item(
-    dtype_x_indices,
+    dtypes_x_query,
+    copy,
     test_flags,
     backend_fw,
     fn_name,
     on_device,
     ground_truth_backend,
 ):
-    dtypes, x, indices = dtype_x_indices
+    dtypes, x, query = dtypes_x_query
     helpers.test_function(
         input_dtypes=dtypes,
         test_flags=test_flags,
@@ -242,7 +207,46 @@ def test_get_item(
         fw=backend_fw,
         fn_name=fn_name,
         x=x,
-        query=indices,
+        query=query,
+        copy=copy,
+    )
+
+
+# set_item
+# TODO: add container and array instance methods
+@handle_test(
+    fn_tree="functional.ivy.set_item",
+    ground_truth_backend="numpy",
+    dtypes_x_query_val=helpers.dtype_array_query_val(
+        available_dtypes=helpers.get_dtypes("valid"),
+    ),
+    copy=st.booleans(),
+    test_with_out=st.just(False),
+    test_gradients=st.just(False),
+    test_instance_method=st.just(False),
+    container_flags=st.just([False]),
+)
+def test_set_item(
+    dtypes_x_query_val,
+    copy,
+    test_flags,
+    backend_fw,
+    fn_name,
+    on_device,
+    ground_truth_backend,
+):
+    dtypes, x, query, val = dtypes_x_query_val
+    helpers.test_function(
+        input_dtypes=dtypes,
+        test_flags=test_flags,
+        ground_truth_backend=ground_truth_backend,
+        on_device=on_device,
+        fw=backend_fw,
+        fn_name=fn_name,
+        x=x,
+        query=query,
+        val=val,
+        copy=copy,
     )
 
 
@@ -595,6 +599,7 @@ def values_and_ndindices(
             )
             nd_index.append(axis_index)
         indices.append(nd_index)
+    indices = np.array(indices)
     return [x_dtype, indices_dtype, updates_dtype], x, indices, updates
 
 
@@ -623,7 +628,7 @@ def values_and_ndindices(
         )
     ),
     reduction=st.sampled_from(["sum", "min", "max", "replace"]),
-    ground_truth_backend="torch",
+    ground_truth_backend="tensorflow",
 )
 def test_scatter_flat(
     x,
@@ -665,6 +670,7 @@ def test_scatter_flat(
 @handle_test(
     fn_tree="functional.ivy.scatter_nd",
     x=values_and_ndindices(
+        # ToDo: needs support for boolean arrays
         array_dtypes=helpers.get_dtypes("numeric"),
         indices_dtypes=["int32", "int64"],
         x_min_value=0,
@@ -1060,7 +1066,7 @@ def test_explicit_ivy_framework_handles():
     ivy.previous_backend()
 
     # set with explicit handle caught
-    ivy_exp = ivy.get_backend(fw_str)
+    ivy_exp = ivy.with_backend(fw_str)
     assert ivy_exp.current_backend_str() == fw_str
 
     # assert backend implemented function is accessible
@@ -1805,7 +1811,7 @@ _composition_2.test_unsupported_devices_and_dtypes = {
     [_composition_1, _composition_2],
 )
 def test_function_supported_device_and_dtype(func):
-    res = ivy.function_supported_devices_and_dtypes(func)
+    res = ivy.function_supported_devices_and_dtypes(func, recurse=True)
     exp = {"cpu": func.test_unsupported_devices_and_dtypes.copy()["cpu"]}
     for dev in exp:
         exp[dev] = tuple(
@@ -1854,26 +1860,26 @@ def test_current_backend_str(fw):
 
 # get_min_denominator
 def test_get_min_denominator():
-    assert ivy.get_min_denominator() == 1e-12
+    assert ivy.min_denominator == 1e-12
 
 
 # set_min_denominator
 @given(x=st.floats(allow_nan=False, allow_infinity=False))
 def test_set_min_denominator(x):
     ivy.set_min_denominator(x)
-    assert ivy.get_min_denominator() == x
+    assert ivy.min_denominator == x
 
 
 # get_min_base
 def test_get_min_base():
-    assert ivy.get_min_base() == 1e-5
+    assert ivy.min_base == 1e-5
 
 
 # set_min_base
 @given(x=st.floats(allow_nan=False, allow_infinity=False))
 def test_set_min_base(x):
     ivy.set_min_base(x)
-    assert ivy.get_min_base() == x
+    assert ivy.min_base == x
 
 
 # stable_divide
@@ -1975,7 +1981,7 @@ def test_print_all_arrays_in_memory():
 )
 def test_set_queue_timeout(x):
     ivy.set_queue_timeout(x)
-    ret = ivy.get_queue_timeout()
+    ret = ivy.queue_timeout
     assert ret == x
 
 
@@ -1985,20 +1991,20 @@ def test_set_queue_timeout(x):
 )
 def test_get_queue_timeout(x):
     ivy.set_queue_timeout(x)
-    ret = ivy.get_queue_timeout()
+    ret = ivy.queue_timeout
     assert ret == x
 
 
 # get_tmp_dir
 def test_get_tmp_dir():
-    ret = ivy.get_tmp_dir()
+    ret = ivy.tmp_dir
     assert ret == "/tmp"
 
 
 # set_tmp_dir
 def test_set_tmp_dir():
     ivy.set_tmp_dir("/new_dir")
-    ret = ivy.get_tmp_dir()
+    ret = ivy.tmp_dir
     assert ret == "/new_dir"
 
 
@@ -2085,9 +2091,9 @@ def _fn3(x, y):
     func=st.sampled_from([_fn1, _fn2, _fn3]),
     dtype_and_arrays_and_axes=helpers.arrays_and_axes(
         allow_none=False,
-        min_num_dims=2,
+        min_num_dims=1,
         max_num_dims=5,
-        min_dim_size=2,
+        min_dim_size=1,
         max_dim_size=10,
         num=2,
         return_dtype=True,
